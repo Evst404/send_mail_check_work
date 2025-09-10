@@ -1,76 +1,80 @@
 import os
 import requests
 import logging
+import time
+from functools import partial
 from dotenv import load_dotenv
-from telegram.ext import Updater, CommandHandler
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
-load_dotenv()
-DVMN_TOKEN = os.getenv("DVMN_TOKEN")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+from telegram import Bot
 
 LONG_POLL_URL = "https://dvmn.org/api/long_polling/"
-HEADERS = {"Authorization": f"Token {DVMN_TOKEN}"}
 
-last_timestamp = None
+logger = logging.getLogger(__name__)
 
 
-def get_status():
-    global last_timestamp
+def get_status(headers, last_timestamp=None):
     params = {"timestamp": last_timestamp} if last_timestamp else {}
     try:
-        response = requests.get(LONG_POLL_URL, headers=HEADERS, params=params, timeout=60)
+        response = requests.get(LONG_POLL_URL, headers=headers, params=params, timeout=90)
         response.raise_for_status()
         data = response.json()
 
         if data.get("status") == "timeout":
-            last_timestamp = data.get("timestamp_to_request")
-            return []
+            return [], data.get("timestamp_to_request")
         elif data.get("status") == "found":
-            last_timestamp = data.get("last_attempt_timestamp")
-            return data.get("new_attempts", [])
+            return data.get("new_attempts", []), data.get("last_attempt_timestamp")
+
     except requests.exceptions.ReadTimeout:
-        logging.info("Сервер Devman держит соединение. Новых проверок пока нет.")
-        return []
+        return [], last_timestamp
+
+    except requests.exceptions.ConnectionError as e:
+        logger.error("Ошибка соединения с интернетом: %s", e)
+        time.sleep(10)
+        return [], last_timestamp
+
     except Exception as e:
-        logging.error("Ошибка при получении статуса: %s", e)
-        return []
+        logger.error("Ошибка при получении статуса: %s", e)
+        time.sleep(10)
+        return [], last_timestamp
 
 
-def start(update, context):
-    attempts = get_status()
-    if not attempts:
-        update.message.reply_text("Пока нет новых проверок.")
-        return
-
-    messages = []
+def send_attempts(bot, chat_id, attempts):
     for attempt in attempts:
         lesson = attempt.get("lesson_title")
         url = attempt.get("lesson_url")
         is_negative = attempt.get("is_negative", False)
 
         if is_negative:
-            messages.append(f"{lesson}\n{url}\nРабота не принята.\n")
+            text = f"Работа не принята\n\n{lesson}\n{url}"
         else:
-            messages.append(f"{lesson}\n{url}\nРабота принята!\n")
+            text = f"Работа принята!\n\n{lesson}\n{url}"
 
-    update.message.reply_text("\n".join(messages))
+        bot.send_message(chat_id=chat_id, text=text)
 
 
 def main():
-    updater = Updater(token=TELEGRAM_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s"
+    )
 
-    dispatcher.add_handler(CommandHandler("start", start))
+    load_dotenv()
+    dvmn_token = os.getenv("DVMN_TOKEN")
+    telegram_token = os.getenv("TELEGRAM_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
-    logging.info("Бот запущен...")
-    updater.start_polling()
-    updater.idle()
+    headers = {"Authorization": f"Token {dvmn_token}"}
+    bot = Bot(token=telegram_token)
+
+    get_status_with_headers = partial(get_status, headers)
+
+    last_timestamp = None
+
+    logger.info("Бот запущен и ждёт проверки работ...")
+
+    while True:
+        attempts, last_timestamp = get_status_with_headers(last_timestamp)
+        if attempts:
+            send_attempts(bot, chat_id, attempts)
 
 
 if __name__ == "__main__":
