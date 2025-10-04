@@ -1,15 +1,38 @@
 import os
 import requests
 import logging
-import time
 from functools import partial
 from dotenv import load_dotenv
 from telegram import Bot
 
 LONG_POLL_URL = "https://dvmn.org/api/long_polling/"
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+class TelegramLogHandler(logging.Handler):
+    def __init__(self, bot, chat_id):
+        super().__init__()
+        self.bot = bot
+        self.chat_id = chat_id
+        self.setFormatter(formatter)
+
+    def emit(self, record):
+        log_entry = self.format(record)
+        self.bot.send_message(chat_id=self.chat_id, text=log_entry)
+
+load_dotenv()
+DVMN_TOKEN = os.getenv("DVMN_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+bot = Bot(token=TELEGRAM_TOKEN)
+telegram_handler = TelegramLogHandler(bot, CHAT_ID)
+logger.addHandler(telegram_handler)
 
 def get_status(headers, last_timestamp=None):
     params = {"timestamp": last_timestamp} if last_timestamp else {}
@@ -28,11 +51,9 @@ def get_status(headers, last_timestamp=None):
         return [], last_timestamp
     except requests.exceptions.ConnectionError as e:
         logger.error(f"Ошибка соединения с интернетом: {e}")
-        time.sleep(10)
         return [], last_timestamp
     except Exception as e:
         logger.critical(f"Критическая ошибка при получении статуса: {e}")
-        time.sleep(10)
         return [], last_timestamp
 
 def send_attempts(bot, chat_id, attempts):
@@ -49,12 +70,8 @@ def send_attempts(bot, chat_id, attempts):
         bot.send_message(chat_id=chat_id, text=text)
 
 def main():
-    load_dotenv()
-    dvmn_token = os.getenv("DVMN_TOKEN")
-    telegram_token = os.getenv("TELEGRAM_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    headers = {"Authorization": f"Token {dvmn_token}"}
-    bot = Bot(token=telegram_token)
+    headers = {"Authorization": f"Token {DVMN_TOKEN}"}
+    bot = Bot(token=TELEGRAM_TOKEN)
     get_status_with_headers = partial(get_status, headers)
     last_timestamp = None
     logger.info("Бот запущен и ждёт проверки работ...")
@@ -62,8 +79,7 @@ def main():
         try:
             attempts, last_timestamp = get_status_with_headers(last_timestamp)
             if attempts:
-                send_attempts(bot, chat_id, attempts)
-            1 / 0 
+                send_attempts(bot, CHAT_ID, attempts)
         except Exception as e:
             logger.critical(f"Необработанная ошибка в основном цикле: {e}")
             time.sleep(10)
