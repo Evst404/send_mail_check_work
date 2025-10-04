@@ -17,36 +17,18 @@
 ---
 
 ## **Установка**
-1. Клонируйте репозиторий:
-```
-git clone <URL репозитория>
-cd <папка репозитория>
-```
-3. Создайте и активируйте виртуальное окружение:
-```
-python -m venv venv
-```
-# Windows
-```
-venv\Scripts\activate
-```
-# Linux/macOS
-```
-source venv/bin/activate
-```
-4. Установите зависимости:
-```
-pip install -r requirements.txt
-```
-5. Создайте файл .env в корне проекта со следующими переменными:
-```
-DVMN_TOKEN=<Ваш токен Devman>
-TELEGRAM_TOKEN=<Токен Telegram-бота>
-CHAT_ID=<ID вашего чата или канала Telegram>
-```
-6. Запуск
-```
-python bot.py
-```
+## Установка
+1. Клонируй репозиторий: `git clone git@github.com:Evst404/send_mail_check_work.git`
+2. Создай venv: `python3 -m venv venv`
+3. Активируй: `source venv/bin/activate`
+4. Установи зависимости: `pip install -r requirements.txt`
+5. Настрой .env с DVMN_TOKEN, TELEGRAM_TOKEN, CHAT_ID
+6. Запусти: `python bot.py`
+
+## Systemd
+1. Создай /etc/systemd/system/send-mail-bot.service (см. код выше)
+2. `systemctl daemon-reload`
+3. `systemctl enable send-mail-bot.service`
+4. `systemctl start send-mail-bot.service`
 
 После запуска бот будет слушать новые проверки и отправлять уведомления в Telegram.
